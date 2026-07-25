@@ -44,10 +44,11 @@ class SignalStrategy:
         return TradeSignal(symbol=snapshot.symbol, side=Side.BUY, volume=0.1)
 
 
-def _engine(executor, cp, strategy=None, start_running=False):
+def _engine(executor, cp, strategy=None, start_running=False, server=None):
     loop = TradingLoop(FakeMarketData(), executor, strategy or HoldStrategy(),
                        LoopConfig(symbols=["EURUSD"], poll_interval=1))
-    return Engine(loop, executor, cp, poll_interval=1, start_running=start_running)
+    return Engine(loop, executor, cp, poll_interval=1,
+                  start_running=start_running, server=server)
 
 
 async def test_start_and_stop_commands_toggle_running():
@@ -128,3 +129,19 @@ async def test_bad_command_fetch_does_not_crash_tick():
     engine = _engine(executor, cp)
     await engine.tick()  # must not raise
     assert cp.states[-1]["last_error"] is not None
+
+
+async def test_publishes_server_and_derived_mode():
+    cp = InMemoryControlPlane()
+    executor = FakeExecutor()
+    engine = _engine(executor, cp, server="TradeNation-DemoBravo")
+    await engine.tick()
+    assert cp.states[-1]["server"] == "TradeNation-DemoBravo"
+    assert cp.states[-1]["mode"] == "demo"
+
+
+async def test_derive_mode_classifies_live_and_none():
+    from mt4_executor.engine import _derive_mode
+    assert _derive_mode("TradeNation-LiveBravo") == "live"
+    assert _derive_mode("Broker-Demo") == "demo"
+    assert _derive_mode(None) is None

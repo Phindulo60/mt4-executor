@@ -34,8 +34,13 @@ create table if not exists public.bot_state (
     open_positions integer,
     positions      jsonb,
     last_error     text,
+    server         text,
+    mode           text,          -- demo | live, derived from the server name
     updated_at     timestamptz not null default now()
 );
+-- If upgrading an existing deployment, run:
+--   alter table public.bot_state add column if not exists server text;
+--   alter table public.bot_state add column if not exists mode text;
 
 -- ---------------------------------------------------------------------------
 -- trades: engine -> site executed-trade log (append-only)

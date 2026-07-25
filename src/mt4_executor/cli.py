@@ -160,6 +160,7 @@ async def _run_engine(connection, connector: Mt4Connector, args: argparse.Namesp
         loop, executor, control_plane,
         poll_interval=args.interval,
         start_running=args.start_running,
+        server=connector.server,
     )
 
     running = asyncio.get_running_loop()

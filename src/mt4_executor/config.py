@@ -34,20 +34,32 @@ class Settings:
         if load_env_file:
             load_dotenv()
 
-        required = {
-            "METAAPI_TOKEN": "token",
-            "MT_LOGIN": "login",
-            "MT_PASSWORD": "password",
-            "MT_SERVER": "server",
+        # One-flag demo/live switch: when MT_MODE is set, the broker credentials
+        # are read from MODE-prefixed vars (e.g. DEMO_MT_LOGIN / LIVE_MT_SERVER),
+        # falling back to the bare vars. Unset MT_MODE = bare vars only (default).
+        mode = (os.getenv("MT_MODE") or "").strip().lower()
+
+        def _pick(base: str) -> Optional[str]:
+            if mode:
+                scoped = os.getenv(f"{mode.upper()}_{base}")
+                if scoped:
+                    return scoped
+            return os.getenv(base)
+
+        sources = {
+            "token": ("METAAPI_TOKEN", os.getenv("METAAPI_TOKEN")),
+            "login": ("MT_LOGIN", _pick("MT_LOGIN")),
+            "password": ("MT_PASSWORD", _pick("MT_PASSWORD")),
+            "server": ("MT_SERVER", _pick("MT_SERVER")),
         }
-        values = {field: os.getenv(env) for env, field in required.items()}
-        missing = [env for env, field in required.items() if not values[field]]
+        missing = [env for _, (env, val) in sources.items() if not val]
         if missing:
             raise ConfigError(
                 "Missing required environment variables: "
                 + ", ".join(sorted(missing))
                 + ". Copy .env.example to .env and fill it in."
             )
+        values = {field: val for field, (_env, val) in sources.items()}
 
         magic_raw = os.getenv("MT_MAGIC", "1000")
         try:

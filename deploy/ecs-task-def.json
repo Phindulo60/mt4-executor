@@ -18,13 +18,13 @@
       "command": ["engine", "--symbol", "EURUSD", "--timeframe", "1h", "--interval", "5"],
       "environment": [
         { "name": "BOT_ID", "value": "default" },
-        { "name": "MT_SERVER", "value": "TradeNation-LiveBravo" },
         { "name": "MT_ACCOUNT_NAME", "value": "mt4-executor" }
       ],
       "secrets": [
         { "name": "METAAPI_TOKEN", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:mt4-executor/engine:METAAPI_TOKEN::" },
         { "name": "MT_LOGIN", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:mt4-executor/engine:MT_LOGIN::" },
         { "name": "MT_PASSWORD", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:mt4-executor/engine:MT_PASSWORD::" },
+        { "name": "MT_SERVER", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:mt4-executor/engine:MT_SERVER::" },
         { "name": "SUPABASE_URL", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:mt4-executor/engine:SUPABASE_URL::" },
         { "name": "SUPABASE_SERVICE_KEY", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:mt4-executor/engine:SUPABASE_SERVICE_KEY::" }
       ],

@@ -28,6 +28,13 @@ from mt4_executor.runner import TradingLoop
 logger = logging.getLogger(__name__)
 
 
+def _derive_mode(server: Optional[str]) -> Optional[str]:
+    """Classify a broker server name as demo or live for the dashboard badge."""
+    if not server:
+        return None
+    return "demo" if "demo" in server.lower() else "live"
+
+
 class Engine:
     """Command-driven wrapper around a TradingLoop.
 
@@ -44,12 +51,14 @@ class Engine:
         *,
         poll_interval: float = 5.0,
         start_running: bool = False,
+        server: Optional[str] = None,
     ) -> None:
         self._loop = loop
         self._executor = executor
         self._cp = control_plane
         self._poll_interval = poll_interval
         self._running = start_running
+        self._server = server
         self._stop = asyncio.Event()
         self._last_error: Optional[str] = None
 
@@ -151,7 +160,12 @@ class Engine:
         return f"{command.type.value} {symbol} {volume} -> {result.string_code}"
 
     async def _publish_state(self) -> None:
-        state: Dict[str, Any] = {"running": self._running, "last_error": self._last_error}
+        state: Dict[str, Any] = {
+            "running": self._running,
+            "last_error": self._last_error,
+            "server": self._server,
+            "mode": _derive_mode(self._server),
+        }
         try:
             account = await self._executor.get_account_information()
             positions = await self._executor.get_positions()

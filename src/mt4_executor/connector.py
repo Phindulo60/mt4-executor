@@ -87,6 +87,11 @@ class Mt4Connector:
         """The live RPC connection (available after connect())."""
         return self._connection
 
+    @property
+    def server(self) -> str:
+        """The broker server name (e.g. TradeNation-DemoBravo)."""
+        return self._settings.server
+
     async def _find_existing_account(self) -> Optional[Any]:
         accounts = await self._api.metatrader_account_api.get_accounts_with_infinite_scroll_pagination()
         for item in accounts:

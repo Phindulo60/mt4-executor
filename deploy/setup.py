@@ -26,6 +26,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
@@ -50,9 +51,32 @@ SECRET_KEYS = [
     "METAAPI_TOKEN",
     "MT_LOGIN",
     "MT_PASSWORD",
+    "MT_SERVER",
     "SUPABASE_URL",
     "SUPABASE_SERVICE_KEY",
 ]
+
+# Keys shared across demo/live (read from the bare var regardless of mode).
+# Everything else is mode-scoped: e.g. MT_LOGIN resolves to DEMO_MT_LOGIN /
+# LIVE_MT_LOGIN (falling back to the bare MT_LOGIN if the scoped one is absent).
+SHARED_KEYS = {"METAAPI_TOKEN", "SUPABASE_URL", "SUPABASE_SERVICE_KEY"}
+
+ECS_SERVICE = "mt4-executor-engine"
+
+
+def select_secret_values(values: dict, mode: str) -> dict:
+    """Resolve the secret payload for a given mode (demo/live).
+
+    Mode-scoped keys prefer ``{MODE}_{KEY}`` and fall back to the bare key,
+    so a single .env can hold both demo and live credentials.
+    """
+    resolved = {}
+    for key in SECRET_KEYS:
+        if key in SHARED_KEYS:
+            resolved[key] = values.get(key)
+        else:
+            resolved[key] = values.get(f"{mode.upper()}_{key}") or values.get(key)
+    return resolved
 
 
 def load_policy(name: str, **subs: str) -> dict:
@@ -129,17 +153,18 @@ def ensure_cluster(ecs, cluster: str) -> None:
     ok(f"{cluster} ready")
 
 
-def ensure_secret(sm, env_file: Path) -> None:
-    print(">> Secrets Manager secret")
+def ensure_secret(sm, env_file: Path, mode: str) -> Optional[str]:
+    """Write the mode-selected credentials into the secret. Returns MT_SERVER."""
+    print(f">> Secrets Manager secret ({mode})")
     if not env_file.exists():
         info(f"{env_file} not found - skipping secret (create it manually later)")
-        return
+        return None
     values = dotenv_values(env_file)
-    payload = {k: values.get(k) for k in SECRET_KEYS}
+    payload = select_secret_values(values, mode)
     missing = [k for k, v in payload.items() if not v]
     if missing:
-        info(f"missing in {env_file}: {', '.join(missing)} - skipping secret")
-        return
+        info(f"missing in {env_file} for mode '{mode}': {', '.join(missing)} - skipping secret")
+        return None
     body = json.dumps(payload)
     try:
         sm.create_secret(Name=SECRET_NAME, SecretString=body)
@@ -147,6 +172,27 @@ def ensure_secret(sm, env_file: Path) -> None:
     except sm.exceptions.ResourceExistsException:
         sm.put_secret_value(SecretId=SECRET_NAME, SecretString=body)
         ok(f"updated {SECRET_NAME} (new version)")
+    ok(f"login {payload['MT_LOGIN']}  server {payload['MT_SERVER']}")
+    return payload["MT_SERVER"]
+
+
+def redeploy_if_running(ecs, cluster: str) -> None:
+    """Force a new deployment if the engine service is already running.
+
+    Makes ``setup.py --mode X`` the single switch: rewriting the secret then
+    bouncing the task pulls the new mode credentials on restart.
+    """
+    print(">> ECS service")
+    try:
+        resp = ecs.describe_services(cluster=cluster, services=[ECS_SERVICE])
+    except ClientError:
+        resp = {"services": []}
+    active = [s for s in resp.get("services", []) if s.get("status") == "ACTIVE"]
+    if not active:
+        info(f"{ECS_SERVICE} not running yet - deploy it with deploy/deploy.sh")
+        return
+    ecs.update_service(cluster=cluster, service=ECS_SERVICE, forceNewDeployment=True)
+    ok(f"forced new deployment of {ECS_SERVICE} - it will restart in the new mode")
 
 
 def ensure_sg(ec2, vpc_id: str | None) -> tuple[str, list[str]]:
@@ -186,18 +232,24 @@ def main() -> int:
     ap.add_argument("--cluster", default=os.getenv("CLUSTER", "trading"))
     ap.add_argument("--env-file", default=str(Path(__file__).resolve().parents[1] / ".env"))
     ap.add_argument("--vpc-id", default=os.getenv("VPC_ID"))
+    ap.add_argument("--mode", choices=["demo", "live"],
+                    default=(os.getenv("MT_MODE") or "demo").strip().lower(),
+                    help="Which broker credentials to load into the secret (demo|live)")
     args = ap.parse_args()
 
     region = args.region
+    mode = args.mode
     session = boto3.Session(region_name=region)
     account = session.client("sts").get_caller_identity()["Account"]
-    print(f"Account {account}  Region {region}\n")
+    banner = "*** LIVE MONEY ***" if mode == "live" else "demo (paper)"
+    print(f"Account {account}  Region {region}  Mode {mode}  {banner}\n")
 
     ensure_ecr(session.client("ecr"))
     ensure_log_group(session.client("logs"))
     exec_arn, task_arn = ensure_roles(session.client("iam"), region, account)
     ensure_cluster(session.client("ecs"), args.cluster)
-    ensure_secret(session.client("secretsmanager"), Path(args.env_file))
+    ensure_secret(session.client("secretsmanager"), Path(args.env_file), mode)
+    redeploy_if_running(session.client("ecs"), args.cluster)
     sg_id, subnets = ensure_sg(session.client("ec2"), args.vpc_id)
 
     print("\nDone. Roles:")

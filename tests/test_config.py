@@ -4,7 +4,9 @@ from mt4_executor.config import Settings
 from mt4_executor.errors import ConfigError
 
 ENV_KEYS = ["METAAPI_TOKEN", "MT_LOGIN", "MT_PASSWORD", "MT_SERVER",
-            "MT_ACCOUNT_NAME", "MT_MAGIC", "METAAPI_REGION"]
+            "MT_ACCOUNT_NAME", "MT_MAGIC", "METAAPI_REGION", "MT_MODE",
+            "DEMO_MT_LOGIN", "DEMO_MT_PASSWORD", "DEMO_MT_SERVER",
+            "LIVE_MT_LOGIN", "LIVE_MT_PASSWORD", "LIVE_MT_SERVER"]
 
 
 @pytest.fixture(autouse=True)
@@ -54,3 +56,33 @@ def test_invalid_magic_raises(monkeypatch):
     monkeypatch.setenv("MT_MAGIC", "not-a-number")
     with pytest.raises(ConfigError):
         Settings.from_env(load_env_file=False)
+
+
+def test_mode_selects_prefixed_vars(monkeypatch):
+    monkeypatch.setenv("METAAPI_TOKEN", "tok")
+    monkeypatch.setenv("MT_MODE", "live")
+    monkeypatch.setenv("DEMO_MT_LOGIN", "111")
+    monkeypatch.setenv("DEMO_MT_PASSWORD", "demopw")
+    monkeypatch.setenv("DEMO_MT_SERVER", "Broker-Demo")
+    monkeypatch.setenv("LIVE_MT_LOGIN", "999")
+    monkeypatch.setenv("LIVE_MT_PASSWORD", "livepw")
+    monkeypatch.setenv("LIVE_MT_SERVER", "Broker-Live")
+    s = Settings.from_env(load_env_file=False)
+    assert s.login == "999"
+    assert s.password == "livepw"
+    assert s.server == "Broker-Live"
+
+
+def test_mode_falls_back_to_bare_vars(monkeypatch):
+    _set_required(monkeypatch)
+    monkeypatch.setenv("MT_MODE", "demo")
+    s = Settings.from_env(load_env_file=False)
+    assert s.login == "12345"
+    assert s.server == "Broker-Demo"
+
+
+def test_unset_mode_uses_bare_vars(monkeypatch):
+    _set_required(monkeypatch)
+    monkeypatch.setenv("DEMO_MT_LOGIN", "should-be-ignored")
+    s = Settings.from_env(load_env_file=False)
+    assert s.login == "12345"

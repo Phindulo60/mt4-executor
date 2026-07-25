@@ -76,14 +76,29 @@ The engine starts **paused** - it connects to the broker and publishes
 heartbeats but runs no strategy until the site sends `start`. `flatten` and
 manual buy/sell work whether running or paused.
 
+## One-flag demo/live switch
+
+The broker credentials live in one `.env` under mode-prefixed keys
+(`DEMO_MT_LOGIN`/`DEMO_MT_PASSWORD`/`DEMO_MT_SERVER` and the `LIVE_*`
+equivalents); `METAAPI_TOKEN` and the Supabase keys are shared. `MT_SERVER` is
+now delivered via the secret (not the task def), so the task def is
+mode-agnostic. Flip modes with a single flag:
+
+```bash
+python deploy/setup.py --mode demo    # or --mode live
+```
+
+This rewrites the `mt4-executor/engine` secret with the selected mode's
+credentials and, if the ECS service is already running, forces a new deployment
+so the engine restarts in that mode. The engine publishes the resolved `server`
+and a derived `mode` (`demo`/`live`) into `bot_state`, which the dashboard shows
+as a safety badge.
+
 ## DEMO smoke-test before going live
 
-Point the secret at a demo account and change the server env var, then deploy:
-- In the secret: set `MT_LOGIN`/`MT_PASSWORD` to the demo account.
-- In `deploy/ecs-task-def.json`: set `MT_SERVER` to the demo server
-  (e.g. `TradeNation-DemoBravo`).
-Verify the site shows a live heartbeat, then exercise start / manual buy /
-flatten and confirm fills in the `trades` table before switching back to live.
+Run `python deploy/setup.py --mode demo` and confirm the site shows a live
+heartbeat with a **DEMO** badge, then exercise start / manual buy / flatten and
+confirm fills in the `trades` table before switching to `--mode live`.
 
 ## Cost
 
