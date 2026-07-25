@@ -12,50 +12,43 @@ Fargate task (engine)  --outbound-->  Supabase (commands / telemetry)
 > If your local `aws` CLI is broken, run the setup + `deploy.sh` from AWS
 > CloudShell or any machine with a working CLI + Docker/buildx.
 
-## One-time setup
+## One-time setup (recommended: boto3 script)
 
-Pick an account/region (defaults below use the trading account, `us-east-1`).
+`deploy/setup.py` provisions everything infra in one idempotent run using
+boto3 - handy when the `aws` CLI is unavailable. Run it from the project venv
+with credentials for the target account in your environment:
 
 ```bash
-export AWS_ACCOUNT_ID=703671911115
-export AWS_REGION=us-east-1
+AWS_REGION=us-east-1 python deploy/setup.py           # or: .venv-ml/bin/python
 ```
 
-### 1. ECR repository
+It ensures the ECR repo, CloudWatch log group, both IAM roles (with a
+least-privilege secrets/logs policy on the exec role), the ECS cluster, an
+outbound-only security group, and the Secrets Manager secret
+`mt4-executor/engine` (values read from `.env` - it uses the **secret**
+Supabase key already there). Re-running is safe. On success it prints the exact
+`deploy.sh` command with the discovered subnet + security-group IDs.
+
+Options: `--region`, `--cluster` (default `trading`), `--vpc-id` (defaults to
+the account's default VPC), `--env-file`.
+
+<details>
+<summary>Manual equivalent (aws CLI)</summary>
+
 ```bash
+export AWS_ACCOUNT_ID=703671911115 AWS_REGION=us-east-1
 aws ecr create-repository --repository-name mt4-executor --region "$AWS_REGION"
-```
-
-### 2. Secrets Manager secret (engine credentials)
-One secret with JSON keys the task definition maps to env vars:
-```bash
 aws secretsmanager create-secret --name mt4-executor/engine --region "$AWS_REGION" \
-  --secret-string '{
-    "METAAPI_TOKEN":"...",
-    "MT_LOGIN":"760459",
-    "MT_PASSWORD":"...",
-    "SUPABASE_URL":"https://asaxglwltlybcxlsiyfv.supabase.co",
-    "SUPABASE_SERVICE_KEY":"sb_secret_..."
-  }'
-```
-Use the **secret** Supabase key (`sb_secret_...`), never the publishable one.
-
-### 3. IAM roles
-- **Execution role** `mt4-executor-exec-role` - trust `ecs-tasks.amazonaws.com`;
-  attach `AmazonECSTaskExecutionRolePolicy` plus a policy allowing
-  `secretsmanager:GetSecretValue` on the secret above (needed to inject secrets)
-  and `logs:CreateLogGroup` (task def uses `awslogs-create-group`).
-- **Task role** `mt4-executor-task-role` - trust `ecs-tasks.amazonaws.com`;
-  needs no AWS permissions (the engine only talks to Supabase + MetaApi over
-  the internet). Kept distinct for least privilege.
-
-### 4. Cluster + networking
-```bash
+  --secret-string '{"METAAPI_TOKEN":"...","MT_LOGIN":"760459","MT_PASSWORD":"...","SUPABASE_URL":"https://asaxglwltlybcxlsiyfv.supabase.co","SUPABASE_SERVICE_KEY":"sb_secret_..."}'
 aws ecs create-cluster --cluster-name trading --region "$AWS_REGION"
 ```
-- A **subnet** with outbound internet (public subnet + `assignPublicIp=ENABLED`,
-  or a private subnet + NAT gateway).
-- A **security group** with **no inbound rules** and all outbound allowed.
+- **Execution role** `mt4-executor-exec-role` (trust `ecs-tasks.amazonaws.com`):
+  `AmazonECSTaskExecutionRolePolicy` + inline `secretsmanager:GetSecretValue` on
+  the secret and `logs:Create*`/`PutLogEvents` on the log group.
+- **Task role** `mt4-executor-task-role` (trust `ecs-tasks.amazonaws.com`): no perms.
+- A **subnet** with outbound internet (public + `assignPublicIp=ENABLED`, or
+  private + NAT) and a **security group** with no inbound, all outbound.
+</details>
 
 ## Deploy
 
