@@ -87,5 +87,5 @@ flatten and confirm fills in the `trades` table before switching back to live.
 
 ## Cost
 
-0.25 vCPU / 0.5 GB ARM64 Fargate running 24/7 is roughly \$9/month plus a few
+0.25 vCPU / 0.5 GB Fargate running 24/7 is roughly \$9/month plus a few
 cents of ECR storage. Scale the task `cpu`/`memory` in the task def if needed.

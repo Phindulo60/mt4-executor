@@ -17,6 +17,10 @@ ECR_REPO="${ECR_REPO:-mt4-executor}"
 CLUSTER="${CLUSTER:-trading}"
 SERVICE="${SERVICE:-mt4-executor-engine}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
+# Build platform. Default amd64 = builds natively in x86_64 CloudShell (no QEMU).
+# For cheaper ARM64 Fargate, set PLATFORM=linux/arm64 AND cpuArchitecture=ARM64
+# in ecs-task-def.json - but that needs QEMU/binfmt on the build host.
+PLATFORM="${PLATFORM:-linux/amd64}"
 REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 IMAGE="${REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -26,8 +30,8 @@ echo ">> ECR login"
 aws ecr get-login-password --region "${AWS_REGION}" \
   | docker login --username AWS --password-stdin "${REGISTRY}"
 
-echo ">> Build + push ${IMAGE} (linux/arm64)"
-docker buildx build --platform linux/arm64 -t "${IMAGE}" --push "${ROOT}"
+echo ">> Build + push ${IMAGE} (${PLATFORM})"
+docker buildx build --platform "${PLATFORM}" -t "${IMAGE}" --push "${ROOT}"
 
 echo ">> Render + register task definition"
 TMP_TASKDEF="$(mktemp)"

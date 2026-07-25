@@ -1,5 +1,7 @@
 # mt4-executor engine - always-on, outbound-only container for ECS Fargate.
-# ARM64 by default (cheaper Fargate); the MetaApi SDK is pure Python.
+# Built for the deploy host arch (default linux/amd64 via deploy.sh, which
+# matches x86_64 CloudShell). The MetaApi SDK is pure Python, so ARM64 works
+# too if you build with QEMU and flip cpuArchitecture in ecs-task-def.json.
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
