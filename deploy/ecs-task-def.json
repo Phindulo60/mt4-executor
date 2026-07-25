@@ -6,7 +6,7 @@
   "memory": "512",
   "runtimePlatform": {
     "cpuArchitecture": "X86_64",
-    "operatingSystem": "LINUX"
+    "operatingSystemFamily": "LINUX"
   },
   "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/mt4-executor-exec-role",
   "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/mt4-executor-task-role",
