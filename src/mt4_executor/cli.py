@@ -10,7 +10,7 @@ import signal
 import sys
 from typing import List, Optional
 
-from mt4_executor.config import Settings
+from mt4_executor.config import Settings, load_dotenv
 from mt4_executor.connector import Mt4Connector
 from mt4_executor.errors import Mt4ExecutorError
 from mt4_executor.executor import TradeExecutor
@@ -202,6 +202,7 @@ async def _run_loop(connection, connector: Mt4Connector, args: argparse.Namespac
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = _build_parser().parse_args(argv)
+    load_dotenv()  # ensure .env is loaded for every command (incl. hub-check)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
