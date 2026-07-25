@@ -84,6 +84,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Begin with the strategy loop active (default: paused, start via the site)",
     )
 
+    sub.add_parser(
+        "hub-check",
+        help="Verify the Supabase control plane is reachable (no broker connection)",
+    )
+
     return parser
 
 
@@ -91,7 +96,20 @@ def _print(obj) -> None:
     print(json.dumps(obj, indent=2, default=str))
 
 
+async def _hub_check() -> int:
+    control_plane = SupabaseControlPlane.from_env()
+    try:
+        await control_plane.publish_state({"running": False, "last_error": "hub-check"})
+        commands = await control_plane.fetch_pending_commands()
+        print(f"OK: Supabase control plane reachable. {len(commands)} pending command(s).")
+    finally:
+        await control_plane.close()
+    return 0
+
+
 async def _run(args: argparse.Namespace) -> int:
+    if args.command == "hub-check":
+        return await _hub_check()
     settings = Settings.from_env()
     connector = Mt4Connector(settings, undeploy_on_close=args.undeploy_after)
     async with connector as connection:
