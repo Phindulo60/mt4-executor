@@ -130,9 +130,12 @@ class SupabaseControlPlane:
             raise ControlPlaneError("Supabase url and service key are required")
         self._base = url.rstrip("/") + "/rest/v1"
         self._bot_id = bot_id
+        # New-format Supabase keys (sb_secret_.../sb_publishable_...) are NOT
+        # JWTs. They must be sent on the apikey header only; putting them on
+        # Authorization makes the platform try to parse them as a JWT and reject
+        # the request. Legacy JWT keys also work on apikey alone.
         self._headers = {
             "apikey": service_key,
-            "Authorization": f"Bearer {service_key}",
             "Content-Type": "application/json",
         }
         self._client: Any = None
