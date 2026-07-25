@@ -44,6 +44,8 @@ TASK_ROLE = "mt4-executor-task-role"
 SECRET_NAME = "mt4-executor/engine"
 SG_NAME = "mt4-executor-sg"
 
+IAM_DIR = Path(__file__).resolve().parent / "iam"
+
 SECRET_KEYS = [
     "METAAPI_TOKEN",
     "MT_LOGIN",
@@ -52,14 +54,17 @@ SECRET_KEYS = [
     "SUPABASE_SERVICE_KEY",
 ]
 
-ECS_TRUST = {
-    "Version": "2012-10-17",
-    "Statement": [{
-        "Effect": "Allow",
-        "Principal": {"Service": "ecs-tasks.amazonaws.com"},
-        "Action": "sts:AssumeRole",
-    }],
-}
+
+def load_policy(name: str, **subs: str) -> dict:
+    """Load a JSON policy from deploy/iam, substituting REGION/ACCOUNT_ID.
+
+    The files in deploy/iam are the single source of truth for these policies
+    (also usable for manual provisioning); this script just applies them.
+    """
+    text = (IAM_DIR / name).read_text()
+    for key, value in subs.items():
+        text = text.replace(key, value)
+    return json.loads(text)
 
 
 def ok(msg: str) -> None:
@@ -92,7 +97,7 @@ def ensure_log_group(logs) -> None:
 def ensure_role(iam, name: str, inline: dict | None, managed: list[str]) -> str:
     try:
         iam.create_role(RoleName=name,
-                        AssumeRolePolicyDocument=json.dumps(ECS_TRUST),
+                        AssumeRolePolicyDocument=json.dumps(load_policy("trust-policy.json")),
                         Description="mt4-executor ECS role")
         ok(f"created {name}")
     except iam.exceptions.EntityAlreadyExistsException:
@@ -107,19 +112,9 @@ def ensure_role(iam, name: str, inline: dict | None, managed: list[str]) -> str:
 
 def ensure_roles(iam, region: str, account: str) -> tuple[str, str]:
     print(">> IAM roles")
-    secret_arn = f"arn:aws:secretsmanager:{region}:{account}:secret:{SECRET_NAME}-*"
-    log_arn = f"arn:aws:logs:{region}:{account}:log-group:{LOG_GROUP}:*"
-    exec_inline = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {"Effect": "Allow", "Action": "secretsmanager:GetSecretValue",
-             "Resource": secret_arn},
-            {"Effect": "Allow",
-             "Action": ["logs:CreateLogGroup", "logs:CreateLogStream",
-                        "logs:PutLogEvents"],
-             "Resource": log_arn},
-        ],
-    }
+    exec_inline = load_policy(
+        "exec-role-inline-policy.json", REGION=region, ACCOUNT_ID=account,
+    )
     exec_arn = ensure_role(
         iam, EXEC_ROLE, exec_inline,
         ["arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"],
