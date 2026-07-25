@@ -1,0 +1,42 @@
+{
+  "family": "mt4-executor-engine",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "runtimePlatform": {
+    "cpuArchitecture": "ARM64",
+    "operatingSystem": "LINUX"
+  },
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/mt4-executor-exec-role",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/mt4-executor-task-role",
+  "containerDefinitions": [
+    {
+      "name": "engine",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/mt4-executor:latest",
+      "essential": true,
+      "command": ["engine", "--symbol", "EURUSD", "--timeframe", "1h", "--interval", "5"],
+      "environment": [
+        { "name": "BOT_ID", "value": "default" },
+        { "name": "MT_SERVER", "value": "TradeNation-LiveBravo" },
+        { "name": "MT_ACCOUNT_NAME", "value": "mt4-executor" }
+      ],
+      "secrets": [
+        { "name": "METAAPI_TOKEN", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:mt4-executor/engine:METAAPI_TOKEN::" },
+        { "name": "MT_LOGIN", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:mt4-executor/engine:MT_LOGIN::" },
+        { "name": "MT_PASSWORD", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:mt4-executor/engine:MT_PASSWORD::" },
+        { "name": "SUPABASE_URL", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:mt4-executor/engine:SUPABASE_URL::" },
+        { "name": "SUPABASE_SERVICE_KEY", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:mt4-executor/engine:SUPABASE_SERVICE_KEY::" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/mt4-executor-engine",
+          "awslogs-region": "REGION",
+          "awslogs-stream-prefix": "engine",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

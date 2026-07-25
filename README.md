@@ -139,6 +139,17 @@ asyncio.run(main())
 The connector owns the network lifecycle; the executor only needs a live
 connection object, which keeps its logic unit-testable without any network.
 
+## Deploy (ECS Fargate)
+
+The engine is packaged as a container (`Dockerfile`) and runs as a single
+outbound-only Fargate service (`desiredCount=1`, no load balancer). Build/push
+and (re)deploy with `deploy/deploy.sh`; one-time setup (ECR, Secrets Manager,
+IAM roles, cluster, subnet/SG) is documented in [deploy/README.md](deploy/README.md).
+
+```bash
+AWS_ACCOUNT_ID=703671911115 AWS_REGION=us-east-1  CLUSTER=trading SUBNET_IDS=subnet-xxxx SECURITY_GROUP_ID=sg-xxxx  ./deploy/deploy.sh
+```
+
 ## Testing
 
 ```bash
