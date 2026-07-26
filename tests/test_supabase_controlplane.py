@@ -33,8 +33,10 @@ class FakeHttpClient:
         self.calls.append(("patch", url, params, json))
         return self.mutate_response
 
-    async def post(self, url, params=None, headers=None, json=None):
-        self.calls.append(("post", url, json))
+    async def post(self, url, params=None, headers=None, json=None, content=None):
+        import json as _json
+        body = _json.loads(content) if content is not None else json
+        self.calls.append(("post", url, body))
         return self.mutate_response
 
     async def aclose(self):
@@ -100,6 +102,18 @@ async def test_record_trade_posts_to_trades():
     assert url.endswith("/trades")
     assert body["bot_id"] == "bot1"
     assert body["source"] == "manual"
+
+
+async def test_record_trade_serializes_datetime_in_raw():
+    from datetime import datetime, timezone
+
+    client = FakeHttpClient()
+    cp = _cp_with_client(client)
+    raw = {"orderId": 1, "time": datetime(2026, 7, 26, 23, 24, 59, tzinfo=timezone.utc)}
+    await cp.record_trade({"source": "manual", "raw": raw})
+    method, url, body = client.calls[0]
+    assert url.endswith("/trades")
+    assert body["raw"]["time"] == "2026-07-26T23:24:59+00:00"
 
 
 async def test_http_error_is_wrapped():

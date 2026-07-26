@@ -8,6 +8,7 @@ implementation for tests/local runs, and a Supabase-backed implementation.
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -61,6 +62,17 @@ class Command:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _json_default(obj: Any) -> str:
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    return str(obj)
+
+
+def _json_content(body: Dict[str, Any]) -> bytes:
+    """Serialize a request body, coercing datetime (e.g. in MetaApi responses)."""
+    return json.dumps(body, default=_json_default).encode()
 
 
 @runtime_checkable
@@ -199,8 +211,8 @@ class SupabaseControlPlane:
             resp = await client.post(
                 f"{self._base}/bot_state",
                 params={"on_conflict": "bot_id"},
-                headers={"Prefer": "resolution=merge-duplicates"},
-                json=body,
+                headers={"Prefer": "resolution=merge-duplicates", "Content-Type": "application/json"},
+                content=_json_content(body),
             )
             resp.raise_for_status()
         except Exception as exc:  # noqa: BLE001
@@ -210,7 +222,11 @@ class SupabaseControlPlane:
         client = await self._http()
         body = {"bot_id": self._bot_id, "created_at": _utc_now_iso(), **trade}
         try:
-            resp = await client.post(f"{self._base}/trades", json=body)
+            resp = await client.post(
+                f"{self._base}/trades",
+                headers={"Content-Type": "application/json"},
+                content=_json_content(body),
+            )
             resp.raise_for_status()
         except Exception as exc:  # noqa: BLE001
             raise ControlPlaneError(f"failed to record trade: {exc}") from exc
