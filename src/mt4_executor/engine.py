@@ -21,6 +21,7 @@ from mt4_executor.controlplane import (
     CommandType,
     ControlPlane,
 )
+from mt4_executor.errors import EngineWedgedError
 from mt4_executor.executor import TradeExecutor
 from mt4_executor.models import Side, TradeSignal
 from mt4_executor.runner import TradingLoop
@@ -52,6 +53,8 @@ class Engine:
         poll_interval: float = 5.0,
         start_running: bool = False,
         server: Optional[str] = None,
+        telemetry_timeout: float = 10.0,
+        max_stale_ticks: int = 12,
     ) -> None:
         self._loop = loop
         self._executor = executor
@@ -59,6 +62,9 @@ class Engine:
         self._poll_interval = poll_interval
         self._running = start_running
         self._server = server
+        self._telemetry_timeout = telemetry_timeout
+        self._max_stale_ticks = max_stale_ticks
+        self._stale_ticks = 0
         self._stop = asyncio.Event()
         self._last_error: Optional[str] = None
 
@@ -93,6 +99,15 @@ class Engine:
                 await self.tick()
             except Exception:  # noqa: BLE001 - never let a tick kill the engine
                 logger.exception("engine tick failed")
+            if self._stale_ticks >= self._max_stale_ticks:
+                logger.critical(
+                    "telemetry stale for %d consecutive ticks - MetaApi link wedged; "
+                    "exiting so the supervisor restarts with a fresh connection",
+                    self._stale_ticks,
+                )
+                raise EngineWedgedError(
+                    f"MetaApi telemetry unavailable for {self._stale_ticks} ticks"
+                )
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self._poll_interval)
             except asyncio.TimeoutError:
@@ -159,6 +174,11 @@ class Engine:
         )
         return f"{command.type.value} {symbol} {volume} -> {result.string_code}"
 
+    async def _collect_telemetry(self):
+        account = await self._executor.get_account_information()
+        positions = await self._executor.get_positions()
+        return account, positions
+
     async def _publish_state(self) -> None:
         state: Dict[str, Any] = {
             "running": self._running,
@@ -167,8 +187,9 @@ class Engine:
             "mode": _derive_mode(self._server),
         }
         try:
-            account = await self._executor.get_account_information()
-            positions = await self._executor.get_positions()
+            account, positions = await asyncio.wait_for(
+                self._collect_telemetry(), timeout=self._telemetry_timeout
+            )
             state.update(
                 {
                     "balance": account.get("balance"),
@@ -178,9 +199,14 @@ class Engine:
                     "positions": positions,
                 }
             )
+            self._stale_ticks = 0
         except Exception as exc:  # noqa: BLE001
+            self._stale_ticks += 1
             state["last_error"] = f"telemetry: {exc}"
-            logger.warning("telemetry fetch failed: %s", exc)
+            logger.warning(
+                "telemetry fetch failed (%d/%d): %s",
+                self._stale_ticks, self._max_stale_ticks, exc,
+            )
         try:
             await self._cp.publish_state(state)
         except Exception:  # noqa: BLE001

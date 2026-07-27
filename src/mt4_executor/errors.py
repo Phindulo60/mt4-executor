@@ -29,6 +29,14 @@ class ControlPlaneError(Mt4ExecutorError):
     """Raised when the control plane (command/telemetry hub) fails."""
 
 
+class EngineWedgedError(Mt4ExecutorError):
+    """Raised when telemetry is unavailable for too long (wedged MetaApi link).
+
+    The engine exits with this so the supervisor (ECS) restarts the task with a
+    fresh MetaApi connection, rather than hanging silently with a stale heartbeat.
+    """
+
+
 class TradeError(Mt4ExecutorError):
     """Raised when a trade request is rejected by the broker or MetaApi.
 

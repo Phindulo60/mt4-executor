@@ -145,3 +145,72 @@ async def test_derive_mode_classifies_live_and_none():
     assert _derive_mode("TradeNation-LiveBravo") == "live"
     assert _derive_mode("Broker-Demo") == "demo"
     assert _derive_mode(None) is None
+
+
+async def test_telemetry_failure_increments_stale_and_still_publishes():
+    class FailingTelemetry(FakeExecutor):
+        async def get_account_information(self):
+            raise RuntimeError("MetaApi websocket timed out")
+
+    cp = InMemoryControlPlane()
+    engine = _engine(FailingTelemetry(), cp)
+    await engine.tick()
+    # heartbeat still published (dashboard stays live), with the error surfaced
+    assert cp.states[-1]["last_error"].startswith("telemetry:")
+    assert engine._stale_ticks == 1
+
+
+async def test_engine_exits_when_telemetry_stale_too_long():
+    import pytest as _pytest
+    from mt4_executor.errors import EngineWedgedError
+
+    class FailingTelemetry(FakeExecutor):
+        async def get_account_information(self):
+            raise RuntimeError("wedged")
+
+    cp = InMemoryControlPlane()
+    loop = TradingLoop(FakeMarketData(), FailingTelemetry(), HoldStrategy(),
+                       LoopConfig(symbols=["EURUSD"], poll_interval=1))
+    engine = Engine(loop, FailingTelemetry(), cp, poll_interval=0.001,
+                    max_stale_ticks=3)
+    with _pytest.raises(EngineWedgedError):
+        await engine.run_forever()
+    assert engine._stale_ticks >= 3
+
+
+async def test_stale_ticks_reset_after_recovery():
+    class Flaky(FakeExecutor):
+        def __init__(self):
+            super().__init__()
+            self.fail = True
+
+        async def get_account_information(self):
+            if self.fail:
+                raise RuntimeError("transient")
+            return {"balance": 1000, "equity": 1000, "currency": "USD"}
+
+    cp = InMemoryControlPlane()
+    ex = Flaky()
+    engine = _engine(ex, cp)
+    await engine.tick()
+    assert engine._stale_ticks == 1
+    ex.fail = False
+    await engine.tick()
+    assert engine._stale_ticks == 0
+
+
+async def test_hanging_telemetry_times_out():
+    import asyncio as _asyncio
+
+    class Hanging(FakeExecutor):
+        async def get_account_information(self):
+            await _asyncio.sleep(5)
+            return {}
+
+    cp = InMemoryControlPlane()
+    loop = TradingLoop(FakeMarketData(), Hanging(), HoldStrategy(),
+                       LoopConfig(symbols=["EURUSD"], poll_interval=1))
+    engine = Engine(loop, Hanging(), cp, poll_interval=1, telemetry_timeout=0.01)
+    await engine.tick()  # must return quickly, not hang
+    assert engine._stale_ticks == 1
+    assert "telemetry:" in cp.states[-1]["last_error"]
